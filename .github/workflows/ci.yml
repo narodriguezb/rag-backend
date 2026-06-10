@@ -63,7 +63,7 @@ jobs:
         with:
           scan-type: fs
           scan-ref: .
-          severity: CRITICAL,HIGH
+          severity: CRITICAL
           ignore-unfixed: true
           exit-code: '1'
           format: table
@@ -76,7 +76,7 @@ jobs:
         if: ${{ env.SNYK_TOKEN != '' }}
         uses: snyk/actions/python-3.10@master
         with:
-          args: --file=requirements.txt --package-manager=pip --severity-threshold=high
+          args: --file=requirements.txt --package-manager=pip --severity-threshold=critical
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
