@@ -58,7 +58,7 @@ jobs:
           uv run python scripts/mutation_gate.py 50
 
       - name: Trivy filesystem scan       # vulnerabilidades de deps/archivos (solo fixables)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
           scan-ref: .
@@ -164,4 +164,5 @@ jobs:
             --cpu-boost \
             --timeout 300 \
             --max-instances 1 \
+            --set-env-vars BUILD_VERSION=${{ github.sha }} \
             --update-secrets ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest
