@@ -1,0 +1,15 @@
+.git
+.venv
+.env
+__pycache__
+**/__pycache__
+*.pyc
+backend/chroma_db
+.pytest_cache
+.mutmut-cache
+mutants
+html
+tests
+docs/*.bak
+*.bak
+.claude

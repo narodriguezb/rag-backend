@@ -1,4 +1,4 @@
-from session_manager import SessionManager, Message
+from backend.session_manager import SessionManager, Message
 
 
 def test_create_session_increments_ids():

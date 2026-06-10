@@ -1,0 +1,134 @@
+# Pipeline CI/CD del backend (FastAPI + uv).
+# - En PR a master: corre solo el job "quality" (gates de calidad y seguridad).
+# - En push/merge a master: corre "quality" y, si pasa, "deploy" a Cloud Run.
+name: CI/CD backend
+
+on:
+  push:
+    branches: [master]        # merge a master -> calidad + deploy
+  pull_request:
+    branches: [master]        # PR contra master -> solo calidad
+  workflow_dispatch:          # permite lanzarlo manualmente desde la pestaña Actions
+
+# Permisos del GITHUB_TOKEN: id-token=write es necesario para autenticar con
+# Google Cloud vía Workload Identity Federation (WIF) sin claves JSON.
+permissions:
+  contents: read
+  id-token: write
+
+# Variables reutilizadas por los pasos de deploy.
+env:
+  PROJECT_ID: rag-proyect-499005
+  REGION: us-central1
+  SERVICE: rag-backend
+
+jobs:
+  # ----------------------------------------------------------------------------
+  # Job 1: calidad y seguridad. Es el "gate": si algo falla, no se despliega.
+  # ----------------------------------------------------------------------------
+  quality:
+    runs-on: ubuntu-latest
+    env:
+      # Tokens de servicios externos; los pasos condicionales se saltan si están vacíos.
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+    steps:
+      # Clona el repo. fetch-depth: 0 (historial completo) lo necesita SonarQube.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Instala uv (gestor de dependencias/entorno de Python) con caché.
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # Sincroniza dependencias del proyecto incluyendo las de desarrollo (tests, ruff, mutmut).
+      - name: Install dependencies
+        run: uv sync --dev
+
+      # Linter: estilo e imports. Falla el build si hay errores de lint.
+      - name: Lint (ruff)
+        run: uv run ruff check backend/
+
+      # Tests unitarios + cobertura. Genera coverage.xml que consume SonarQube.
+      - name: Tests + coverage
+        run: uv run pytest --cov=backend --cov-report=xml --cov-report=term-missing -q
+
+      # Mutation testing: introduce mutaciones y verifica que los tests las "maten".
+      # export-cicd-stats vuelca el resultado a JSON y mutation_gate.py falla si el score < 50%.
+      - name: Mutation testing (mutmut >= 50%)
+        run: |
+          uv run mutmut run || true
+          uv run mutmut export-cicd-stats
+          uv run python scripts/mutation_gate.py 50
+
+      # Trivy: escaneo de vulnerabilidades del sistema de archivos (deps + configs).
+      # ignore-unfixed=true -> solo falla por vulnerabilidades que tienen fix disponible.
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+
+      # Snyk necesita un requirements.txt (no entiende uv.lock), lo exportamos al vuelo.
+      - name: Export requirements for Snyk
+        if: ${{ env.SNYK_TOKEN != '' }}
+        run: uv export --format requirements-txt --no-emit-project --no-dev > requirements.txt
+
+      # Snyk: análisis de vulnerabilidades en dependencias. Gate estricto (falla en HIGH+).
+      - name: Snyk dependency scan
+        if: ${{ env.SNYK_TOKEN != '' }}
+        uses: snyk/actions/python-3.10@master
+        with:
+          args: --file=requirements.txt --package-manager=pip --severity-threshold=high
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      # SonarQube Cloud: análisis estático y cobertura. No bloqueante (continue-on-error)
+      # para que un problema de Sonar no frene el deploy del demo.
+      - name: SonarQube Cloud scan
+        if: ${{ env.SONAR_TOKEN != '' }}
+        continue-on-error: true
+        uses: SonarSource/sonarqube-scan-action@v4
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  # ----------------------------------------------------------------------------
+  # Job 2: deploy a Cloud Run. Solo tras pasar "quality" y solo en push a master.
+  # ----------------------------------------------------------------------------
+  deploy:
+    needs: quality
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Autenticación a Google Cloud vía WIF (sin claves): GitHub OIDC -> SA gh-deployer.
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/235944902030/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: gh-deployer@rag-proyect-499005.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      # Despliega desde el código fuente (Cloud Build construye el Dockerfile).
+      # La API key se inyecta desde Secret Manager, no como texto plano.
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy "$SERVICE" \
+            --source . \
+            --project "$PROJECT_ID" \
+            --region "$REGION" \
+            --allow-unauthenticated \
+            --memory 2Gi \
+            --cpu 1 \
+            --cpu-boost \
+            --timeout 300 \
+            --max-instances 1 \
+            --update-secrets ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest

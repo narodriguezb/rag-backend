@@ -1,14 +1,15 @@
 import warnings
+
 warnings.filterwarnings("ignore", message="resource_tracker: There appear to be.*")
 
+import os
+from typing import List, Optional
+
+from config import config
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
-import os
-
-from config import config
 from rag_system import RAGSystem
 
 # Initialize FastAPI app

@@ -10,3 +10,7 @@ backend/chroma_db/
 .mutmut-cache
 mutants/
 html/
+.coverage
+coverage.xml
+requirements.txt
+*.bak

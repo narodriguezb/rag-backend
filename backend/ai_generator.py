@@ -1,5 +1,7 @@
+from typing import Any, Dict, List, Optional
+
 import anthropic
-from typing import List, Optional, Dict, Any
+
 
 class AIGenerator:
     """Handles interactions with Anthropic's Claude API for generating responses"""
