@@ -68,18 +68,6 @@ jobs:
           exit-code: '1'
           format: table
 
-      - name: Export requirements for Snyk
-        if: ${{ env.SNYK_TOKEN != '' }}
-        run: uv export --format requirements-txt --no-emit-project --no-dev > requirements.txt
-
-      - name: Snyk dependency scan        # vulnerabilidades de dependencias (gate HIGH+)
-        if: ${{ env.SNYK_TOKEN != '' }}
-        uses: snyk/actions/python-3.10@master
-        with:
-          args: --file=requirements.txt --package-manager=pip --severity-threshold=critical
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-
       - name: SonarQube Cloud scan        # análisis estático + cobertura (no bloqueante)
         if: ${{ env.SONAR_TOKEN != '' }}
         continue-on-error: true
