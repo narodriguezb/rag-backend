@@ -130,21 +130,47 @@ jobs:
     needs: quality
     if: github.ref == 'refs/heads/master' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    env:
+      # Imagen en Artifact Registry (repo creado por el deploy --source inicial).
+      IMAGE: us-central1-docker.pkg.dev/rag-proyect-499005/cloud-run-source-deploy/rag-backend
     steps:
       - uses: actions/checkout@v4
 
+      # Auth a Google Cloud vía WIF (sin claves). token_format=access_token para el login de Docker.
       - id: auth
         uses: google-github-actions/auth@v2
         with:
+          token_format: access_token
           workload_identity_provider: projects/235944902030/locations/global/workloadIdentityPools/github-pool/providers/github-provider
           service_account: gh-deployer@rag-proyect-499005.iam.gserviceaccount.com
 
       - uses: google-github-actions/setup-gcloud@v2
 
+      # Login a Artifact Registry con el access token de WIF.
+      - uses: docker/login-action@v3
+        with:
+          registry: us-central1-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Build con caché de capas en GitHub Actions: reaprovecha torch/deps entre runs;
+      # solo reconstruye lo que cambió -> deploys de ~1-2 min salvo cambios de dependencias.
+      - name: Build and push (cached)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Despliega la imagen ya construida (sin rebuild en Cloud Build).
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy "$SERVICE" \
-            --source . \
+            --image "$IMAGE:${{ github.sha }}" \
             --project "$PROJECT_ID" \
             --region "$REGION" \
             --allow-unauthenticated \
