@@ -41,6 +41,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+          python-version: "3.13"          # .python-version está gitignored; fijamos 3.13 (onnxruntime no tiene wheel en 3.14)
 
       - name: Install dependencies
         run: uv sync --dev
