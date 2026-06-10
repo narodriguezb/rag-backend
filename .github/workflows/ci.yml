@@ -147,18 +147,18 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v2
 
       # Login a Artifact Registry con el access token de WIF.
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9   # v3
         with:
           registry: us-central1-docker.pkg.dev
           username: oauth2accesstoken
           password: ${{ steps.auth.outputs.access_token }}
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f   # v3
 
       # Build con caché de capas en GitHub Actions: reaprovecha torch/deps entre runs;
       # solo reconstruye lo que cambió -> deploys de ~1-2 min salvo cambios de dependencias.
       - name: Build and push (cached)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8   # v6
         with:
           context: .
           push: true
