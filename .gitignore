@@ -4,3 +4,9 @@ __pycache__/
 *.pyc
 backend/chroma_db/
 .python-version
+
+# Testing
+.pytest_cache/
+.mutmut-cache
+mutants/
+html/
