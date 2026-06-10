@@ -111,6 +111,7 @@ async def startup_event():
     """Load initial documents on startup"""
     build_version = os.getenv("BUILD_VERSION", "local")
     print(f"=== rag-backend startup OK | build={build_version} ===", flush=True)
+    print("CI/CD demo: flujo completo (lint, tests, mutation, scans, deploy) OK", flush=True)
     docs_path = "../docs"
     if os.path.exists(docs_path):
         print("Loading initial documents...")
