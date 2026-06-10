@@ -109,6 +109,8 @@ async def get_course_stats():
 @app.on_event("startup")
 async def startup_event():
     """Load initial documents on startup"""
+    build_version = os.getenv("BUILD_VERSION", "local")
+    print(f"=== rag-backend startup OK | build={build_version} ===", flush=True)
     docs_path = "../docs"
     if os.path.exists(docs_path):
         print("Loading initial documents...")
