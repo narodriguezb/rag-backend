@@ -41,8 +41,8 @@ export const options = {
       stages: QUICK
         ? [{ duration: '10s', target: 30 }, { duration: '10s', target: 0 }]
         : [
-            { duration: '40s', target: 60 },
-            { duration: '60s', target: 150 },
+            { duration: '30s', target: 100 },
+            { duration: '90s', target: 350 },
             { duration: '40s', target: 0 },
           ],
       exec: 'saturate',
@@ -82,5 +82,5 @@ export function saturate() {
   check(r, { 'load 200': (res) => res.status === 200 });
   if (r.status === 429) throttled.add(1);
   errorRate.add(r.status >= 500 || r.status === 0);
-  sleep(0.3);
+  sleep(0.1);
 }

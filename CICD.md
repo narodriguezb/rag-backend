@@ -91,11 +91,15 @@ en cada Pull Request a `master`; el deploy corre solo cuando los cambios aterriz
 > Las actions de Docker están **fijadas a commit SHA** (no a tags `@v3/@v6`) porque manejan el
 > access token del registry — mitigación de cadena de suministro pedida por el `security_review`.
 
-### Caché (clave para deploys rápidos)
+### Caché
 | Caché | Mecanismo | Efecto |
 |---|---|---|
-| Capas de la imagen Docker | `cache-from: type=gha` / `cache-to: type=gha,mode=max` en `build-push-action` | reutiliza la capa pesada de `torch`/deps; el primer deploy llena la caché (~10 min), los siguientes ~1-2 min |
 | Dependencias `uv` | `setup-uv` con `enable-cache: true` | acelera `uv sync` en el job `quality` |
+
+> El build del deploy **NO usa cache de GitHub Actions**. Se probó `cache-to: type=gha,mode=max`
+> pero exportar las capas (~2GB con torch) al GHA Cache se **atascaba** (>30 min). Sin ese cache el
+> build es directo y determinista (~5-7 min): `uv` re-baja deps rápido y la imagen se pushea a
+> Artifact Registry. Ver [Troubleshooting](#11-troubleshooting).
 
 ### Plataforma
 | Servicio | Rol |
@@ -210,15 +214,15 @@ Pasos:
 1. **Auth a GCP** (`google-github-actions/auth@v2`) vía WIF, con `token_format: access_token`.
 2. **Login a Artifact Registry** (`docker/login-action`) usando ese access token
    (`username: oauth2accesstoken`).
-3. **Build + push con caché** (`docker/build-push-action`):
+3. **Build + push** (`docker/build-push-action`, sin cache de GHA):
    ```yaml
    tags: us-central1-docker.pkg.dev/rag-proyect-499005/cloud-run-source-deploy/rag-backend:${{ github.sha }}
-   cache-from: type=gha
-   cache-to: type=gha,mode=max
    ```
-   Reutiliza las capas (incluida la pesada de `torch`) entre runs → solo reconstruye lo que cambia.
+   Build directo (~5-7 min). Se quitó el cache de GHA porque su export se atascaba (ver [Caché](#caché)).
 
-   > El `Dockerfile` es **multi-stage**: la etapa *builder* instala `build-essential` + `uv` y compila el `.venv`; la etapa *runtime* (slim, solo `libgomp1`) copia ese `.venv` y el código. Así los compiladores **no llegan a la imagen final** (menor tamaño y superficie de ataque). Verificado: `gcc`/`make` ausentes en la imagen publicada.
+   > El `Dockerfile` es **multi-stage**: la etapa *builder* instala `build-essential` + `uv` y compila el `.venv`; la etapa *runtime* (slim, solo `libgomp1`) copia ese `.venv` y el código. Así los compiladores **no llegan a la imagen final** (menor tamaño y superficie de ataque). Verificado: `gcc`/`make` ausentes.
+   >
+   > **torch CPU-only:** `pyproject.toml` fija `torch` al índice `pytorch-cpu` (`[tool.uv.sources]`, marker `sys_platform == 'linux'`), evitando ~2GB de libs CUDA (`nvidia-*`) inútiles en Cloud Run (sin GPU). Imagen y cold start mucho más livianos; en Mac se usa el torch por defecto.
 4. **Deploy** por imagen (no por `--source`, así no se reconstruye en Cloud Build):
    ```bash
    gcloud run deploy rag-backend \

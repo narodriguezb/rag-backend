@@ -221,16 +221,14 @@ jobs:
 
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f   # v3
 
-      # Build con caché de capas en GitHub Actions: reaprovecha torch/deps entre runs;
-      # solo reconstruye lo que cambió -> deploys de ~1-2 min salvo cambios de dependencias.
-      - name: Build and push (cached)
+      # Sin cache de GHA: exportar las capas (~2GB con torch) al GitHub Actions Cache se atascaba
+      # (>30 min). uv re-baja deps rápido; el build directo es ~6 min y determinista.
+      - name: Build and push
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8   # v6
         with:
           context: .
           push: true
           tags: ${{ env.IMAGE }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       # Despliega la imagen ya construida (sin rebuild en Cloud Build).
       - name: Deploy to Cloud Run
