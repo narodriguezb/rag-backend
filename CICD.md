@@ -217,6 +217,8 @@ Pasos:
    cache-to: type=gha,mode=max
    ```
    Reutiliza las capas (incluida la pesada de `torch`) entre runs → solo reconstruye lo que cambia.
+
+   > El `Dockerfile` es **multi-stage**: la etapa *builder* instala `build-essential` + `uv` y compila el `.venv`; la etapa *runtime* (slim, solo `libgomp1`) copia ese `.venv` y el código. Así los compiladores **no llegan a la imagen final** (menor tamaño y superficie de ataque). Verificado: `gcc`/`make` ausentes en la imagen publicada.
 4. **Deploy** por imagen (no por `--source`, así no se reconstruye en Cloud Build):
    ```bash
    gcloud run deploy rag-backend \
