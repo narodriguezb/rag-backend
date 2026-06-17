@@ -35,7 +35,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0          # historial completo para SonarQube
+          fetch-depth: 0          # historial completo para SonarQube + escaneo de secretos
+
+      - name: Gitleaks (escaneo de secretos)   # gate pre-merge: falla si encuentra secretos
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: astral-sh/setup-uv@v5
         with:

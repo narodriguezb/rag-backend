@@ -72,6 +72,7 @@ en cada Pull Request a `master`; el deploy corre solo cuando los cambios aterriz
 | ruff | dev dep | lint + orden de imports |
 | pytest + pytest-cov | dev dep | tests unitarios + cobertura (`coverage.xml`) |
 | mutmut | `>=3,<4` | mutation testing (gate ≥50%, `scripts/mutation_gate.py`) |
+| Gitleaks | `gitleaks/gitleaks-action@v2` | escaneo de secretos (**gate pre-merge**, en `quality`) |
 | Trivy | `aquasecurity/trivy-action@master` | escaneo de vulnerabilidades (filesystem/deps) |
 | SonarQube Cloud | `SonarSource/sonarqube-scan-action@v4` | análisis estático + cobertura |
 | Gemini code review | `google-github-actions/run-gemini-cli@v0.1.22` (Vertex AI vía WIF) | revisión de código (advisory) |
@@ -131,6 +132,7 @@ fijado explícitamente — ver [Troubleshooting](#11-troubleshooting)). Pasos en
 
 | # | Paso | Comando / Action | Falla si… |
 |---|------|------------------|-----------|
+| 0 | Gitleaks (secretos) | `gitleaks/gitleaks-action@v2` (historial git) | encuentra un secreto; falsos positivos se silencian en `.gitleaksignore` (por *fingerprint*) |
 | 1 | Lint | `uv run ruff check backend/` | hay errores de estilo/imports |
 | 2 | Tests + cobertura | `uv run pytest --cov=backend --cov-report=xml -q` | falla un test; genera `coverage.xml` para SonarQube |
 | 3 | Mutation testing | `uv run mutmut run` → `mutmut export-cicd-stats` → `python scripts/mutation_gate.py 50` | el *mutation score* es **< 50%** |
