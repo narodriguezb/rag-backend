@@ -327,6 +327,7 @@ uv run mutmut run && uv run mutmut export-cicd-stats && uv run python scripts/mu
 |---------|-------|----------|
 | `Install dependencies` falla: `onnxruntime ... no wheel for cp314` | `uv` eligió Python 3.14 (el `.python-version` está gitignored) | el workflow fija `python-version: "3.13"` en `setup-uv` |
 | `code_review`/`security_review` falla autenticando a GCP | el SA `gh-deployer@` no tiene `roles/aiplatform.user`, o el WIF no resuelve | otorgar el rol; verificar provider/SA del WIF |
+| Gemini CLI: *not running in a trusted directory* | feature de "trusted folders" en modo headless | setear `GEMINI_CLI_TRUST_WORKSPACE: "true"` en el `env` del step de `run-gemini-cli` |
 | Gemini responde `404 model not found` | id de modelo inválido para la región | usar `gemini-2.5-flash` en `us-central1` |
 | Gemini responde `429 RESOURCE_EXHAUSTED` | cuota del modelo agotada/en 0 | revisar cuotas de Vertex (en free trial no se pueden subir; ver [`MIGRACION-GEMINI.md`](MIGRACION-GEMINI.md)) |
 | El deploy tarda ~10 min | primera vez: caché de capas fría | runs siguientes reutilizan la caché (~1-2 min) |
