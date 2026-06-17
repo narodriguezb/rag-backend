@@ -31,7 +31,9 @@ ENV PATH="/app/.venv/bin:$PATH" \
 COPY backend/ ./backend/
 COPY docs/ ./docs/
 
-RUN python -c "from chromadb.utils import embedding_functions; embedding_functions.SentenceTransformerEmbeddingFunction(model_name='all-MiniLM-L6-v2')"
+RUN for i in 1 2 3; do \
+        python -c "from chromadb.utils import embedding_functions; embedding_functions.SentenceTransformerEmbeddingFunction(model_name='all-MiniLM-L6-v2')" && break || sleep 5; \
+    done || echo "WARN: preload del modelo omitido (HuggingFace no disponible); se descargara en el primer arranque"
 
 ENV PORT=8080
 WORKDIR /app/backend
