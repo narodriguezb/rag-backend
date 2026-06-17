@@ -338,7 +338,8 @@ uv run mutmut run && uv run mutmut export-cicd-stats && uv run python scripts/mu
 | Gemini CLI: *not running in a trusted directory* | feature de "trusted folders" en modo headless | setear `GEMINI_CLI_TRUST_WORKSPACE: "true"` en el `env` del step de `run-gemini-cli` |
 | Gemini responde `404 model not found` (`gemini-3.x...`) | la gemini-cli **0.46** ignora `--model`/`GEMINI_MODEL`/settings y defaultea a Gemini 3.x + su *model router* | **pinear `gemini_cli_version: "0.45.0"`** (que sí respeta el modelo), `gemini_model: gemini-2.5-flash` y `settings: '{"model":{"name":"gemini-2.5-flash"},"experimental":{"useModelRouter":false}}'` |
 | Gemini responde `429 RESOURCE_EXHAUSTED` | cuota del modelo agotada/en 0 | revisar cuotas de Vertex (en free trial no se pueden subir; ver [`MIGRACION-GEMINI.md`](MIGRACION-GEMINI.md)) |
-| El deploy tarda ~10 min | primera vez: caché de capas fría | runs siguientes reutilizan la caché (~1-2 min) |
+| Build falla en el preload: `OSError: couldn't connect to 'https://huggingface.co'` | descarga del modelo en build-time falló (HF transitorio / rate-limit) | el `RUN` del preload **reintenta 3× y es best-effort** (`|| echo`): el build no falla; el modelo se baja en el primer arranque. Re-correr el deploy suele bastar |
+| El deploy se cuelga >30 min en `exporting to GitHub Actions Cache` | `cache-to: type=gha,mode=max` atascado exportando capas grandes | **ya removido** el cache de GHA; build directo ~5-7 min (ver [Caché](#caché)) |
 
 > Snyk se removió del workflow (se colgaba escaneando el árbol de dependencias de ML). El primer
 > deploy histórico usaba `gcloud run deploy --source` (rebuild completo en cada deploy); ahora se usa
