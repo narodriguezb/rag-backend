@@ -1,0 +1,6 @@
+{
+  "type": "email",
+  "displayName": "Email Nestor (rag-backend alerts)",
+  "labels": { "email_address": "nestorx211@gmail.com" },
+  "enabled": true
+}
