@@ -1,0 +1,28 @@
+{
+  "displayName": "rag-backend · Disponibilidad < 99% (2xx/total)",
+  "combiner": "OR",
+  "conditions": [{
+    "displayName": "Ratio de exito (2xx) por debajo de 99%",
+    "conditionThreshold": {
+      "filter": "metric.type=\"run.googleapis.com/request_count\" resource.type=\"cloud_run_revision\" resource.label.service_name=\"rag-backend\" metric.label.response_code_class=\"2xx\"",
+      "aggregations": [{
+        "alignmentPeriod": "300s",
+        "perSeriesAligner": "ALIGN_RATE",
+        "crossSeriesReducer": "REDUCE_SUM"
+      }],
+      "denominatorFilter": "metric.type=\"run.googleapis.com/request_count\" resource.type=\"cloud_run_revision\" resource.label.service_name=\"rag-backend\"",
+      "denominatorAggregations": [{
+        "alignmentPeriod": "300s",
+        "perSeriesAligner": "ALIGN_RATE",
+        "crossSeriesReducer": "REDUCE_SUM"
+      }],
+      "comparison": "COMPARISON_LT",
+      "thresholdValue": 0.99,
+      "duration": "300s",
+      "trigger": { "count": 1 }
+    }
+  }],
+  "alertStrategy": { "autoClose": "604800s" },
+  "notificationChannels": ["__CHANNEL__"],
+  "enabled": true
+}

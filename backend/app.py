@@ -2,7 +2,10 @@ import warnings
 
 warnings.filterwarnings("ignore", message="resource_tracker: There appear to be.*")
 
+import hashlib
 import os
+import random
+import time
 from typing import List, Optional
 
 from config import config
@@ -105,6 +108,37 @@ async def get_course_stats():
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/load")
+def synthetic_load(rows: int = 800, iterations: int = 120, ms: int = 0):
+    if not config.ENABLE_LOAD_ENDPOINT:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    rows = max(1, min(rows, 5000))
+    iterations = max(1, min(iterations, 2000))
+    ms = max(0, min(ms, 5000))
+
+    start = time.perf_counter()
+    data = [{"id": i, "value": random.random(), "label": f"item-{i}"} for i in range(rows)]
+
+    checksum = 0
+    sample = min(64, rows)
+    for _ in range(iterations):
+        data.sort(key=lambda row: row["value"])
+        digest = hashlib.sha256(repr(data[:sample]).encode()).hexdigest()
+        checksum ^= int(digest[:8], 16)
+
+    if ms:
+        time.sleep(ms / 1000)
+
+    elapsed_ms = round((time.perf_counter() - start) * 1000, 2)
+    return {
+        "rows": rows,
+        "iterations": iterations,
+        "delay_ms": ms,
+        "checksum": checksum,
+        "elapsed_ms": elapsed_ms,
+    }
 
 @app.on_event("startup")
 async def startup_event():

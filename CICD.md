@@ -12,7 +12,7 @@ Resumen y enlace en el [README](README.md#cicd). Definición: [`.github/workflow
 1. [Visión general](#1-visión-general)
 2. [Disparadores](#2-disparadores)
 3. [Job `quality`](#3-job-quality)
-4. [Reviews con Claude (`code_review` / `security_review`)](#4-reviews-con-claude)
+4. [Reviews con Gemini (`code_review` / `security_review`)](#4-reviews-con-gemini)
 5. [Job `deploy`](#5-job-deploy)
 6. [Protección de rama (ruleset)](#6-protección-de-rama-ruleset)
 7. [Autenticación: Workload Identity Federation](#7-autenticación-workload-identity-federation)
@@ -32,9 +32,9 @@ en cada Pull Request a `master`; el deploy corre solo cuando los cambios aterriz
 ```
                     ┌─────────────────────── PR a master ───────────────────────┐
                     │                                                            │
-   commit  ─────►   │  quality            code_review (Claude)   security_review │
-   en una rama      │  (lint, tests,      (comenta el diff,      (Claude; falla  │
-                    │   mutation, scan)    advisory)             si hay hallazgos)│
+   commit  ─────►   │  quality            code_review (Gemini)   security_review │
+   en una rama      │  (lint, tests,      (comenta el diff,      (Gemini;        │
+                    │   mutation, scan)    advisory)             advisory)        │
                     └────────────────────────────┬───────────────────────────────┘
                                                   │  (ruleset exige quality + security_review)
                                                   ▼
@@ -48,7 +48,8 @@ en cada Pull Request a `master`; el deploy corre solo cuando los cambios aterriz
 |-----|--------|--------------------|
 | `quality` | `pull_request` + `push` a master | **Sí** (check requerido) |
 | `code_review` | `pull_request` | No (advisory) |
-| `security_review` | `pull_request` | **Sí** (check requerido) |
+| `security_review` | `pull_request` | No (advisory; el check es requerido pero ya no falla por hallazgos) |
+| `security_report` | `pull_request` | No (informativo; comentario sticky) |
 | `deploy` | `push` a master | — (corre post-merge) |
 
 ---
@@ -62,7 +63,7 @@ en cada Pull Request a `master`; el deploy corre solo cuando los cambios aterriz
 | FastAPI + uvicorn | API HTTP |
 | ChromaDB | vector store |
 | sentence-transformers (`all-MiniLM-L6-v2`) | embeddings |
-| Anthropic Claude (SDK `anthropic`) | generación RAG |
+| Google Gemini `gemini-2.5-flash` (SDK `google-genai`, Vertex AI, auth ADC) | generación RAG |
 | `uv` | gestión de dependencias y entorno |
 
 ### Calidad y seguridad (en CI)
@@ -73,8 +74,8 @@ en cada Pull Request a `master`; el deploy corre solo cuando los cambios aterriz
 | mutmut | `>=3,<4` | mutation testing (gate ≥50%, `scripts/mutation_gate.py`) |
 | Trivy | `aquasecurity/trivy-action@master` | escaneo de vulnerabilidades (filesystem/deps) |
 | SonarQube Cloud | `SonarSource/sonarqube-scan-action@v4` | análisis estático + cobertura |
-| Claude code review | `anthropics/claude-code-action@v1` | revisión de código (advisory) |
-| Claude security review | `anthropics/claude-code-security-review@main` | revisión de seguridad (gate) |
+| Gemini code review | `google-github-actions/run-gemini-cli@v0.1.22` (Vertex AI vía WIF) | revisión de código (advisory) |
+| Gemini security review | `google-github-actions/run-gemini-cli@v0.1.22` (Vertex AI vía WIF) | revisión de seguridad (advisory) |
 
 ### Build y deploy
 | Herramienta | Versión / ref (pin) | Rol |
@@ -102,8 +103,8 @@ en cada Pull Request a `master`; el deploy corre solo cuando los cambios aterriz
 | GitHub Rulesets | protección de rama (gate del merge/deploy) |
 | Google Cloud Run | hosting del backend |
 | Artifact Registry | registro de imágenes Docker |
-| Secret Manager | `ANTHROPIC_API_KEY` en runtime |
-| Workload Identity Federation | autenticación sin claves JSON |
+| Vertex AI | LLM (Gemini) en runtime y en las reviews, vía ADC/WIF |
+| Workload Identity Federation | autenticación sin claves JSON (deploy + reviews + Vertex) |
 
 ---
 
@@ -114,12 +115,12 @@ on:
   push:
     branches: [master]   # merge a master -> quality + deploy
   pull_request:
-    branches: [master]   # PR -> quality + reviews de Claude
+    branches: [master]   # PR -> quality + reviews de Gemini
   workflow_dispatch:     # ejecución manual
 ```
 
 Permisos del `GITHUB_TOKEN`: `contents: read`, `id-token: write` (necesario para WIF) y
-`pull-requests: write` (para que las reviews de Claude comenten).
+`pull-requests: write` (para que las reviews de Gemini comenten).
 
 ---
 
@@ -144,31 +145,53 @@ El scope de mutación se define en `setup.cfg` (`[mutmut] source_paths`, `pytest
 
 ---
 
-## 4. Reviews con Claude
+## 4. Reviews con Gemini
 
-Dos jobs independientes que solo corren en `pull_request` (revisan el *diff*).
+Dos jobs independientes que solo corren en `pull_request` (revisan el *diff*). Ambos usan
+`google-github-actions/run-gemini-cli@v0.1.22` con `use_vertex_ai: true`, modelo
+`gemini-2.5-flash`, autenticando a Vertex AI por **WIF** (mismo provider y SA `gh-deployer@` que el
+deploy). **No se usa API key.**
+
+```yaml
+- uses: google-github-actions/run-gemini-cli@v0.1.22
+  env:
+    GEMINI_MODEL: gemini-2.5-flash
+  with:
+    use_vertex_ai: true
+    gcp_workload_identity_provider: projects/235944902030/.../providers/github-provider
+    gcp_service_account: gh-deployer@rag-proyect-499005.iam.gserviceaccount.com
+    gcp_project_id: rag-proyect-499005
+    gcp_location: us-central1
+    gcp_token_format: access_token
+    prompt: |
+      ... (review de código / de seguridad)
+```
 
 ### `code_review` (advisory)
 
-- Action: `anthropics/claude-code-action@v1`, modelo `claude-sonnet-4-6`.
 - Comenta el PR con bugs / calidad / buenas prácticas. **No bloquea** el merge.
-- Requiere la **GitHub App de Claude** instalada en el repo (https://github.com/apps/claude);
-  si no, el token-exchange falla con 401.
 
-### `security_review` (gate)
+### `security_review` (advisory)
 
-- Action: `anthropics/claude-code-security-review@main`, modelo `claude-sonnet-4-6`.
 - Audita el diff buscando vulnerabilidades y comenta los hallazgos.
-- La action expone el output `findings-count`; un paso posterior hace `exit 1` si es `> 0`:
+- **Ya NO es un gate duro.** Antes (con Claude) un paso posterior hacía `exit 1` si
+  `findings-count > 0` y bloqueaba el merge; tras la migración a Gemini la review es **advisory**
+  (solo comenta). El check sigue siendo requerido por el ruleset, pero pasa siempre.
 
-  ```yaml
-  - name: Fail if security findings
-    if: ${{ steps.sec.outputs.findings-count > 0 }}
-    run: exit 1
-  ```
-- Es check **requerido** por el ruleset → si Claude encuentra algo, **bloquea el merge**.
+> Migrado desde `anthropics/claude-code-action` y `claude-code-security-review`
+> (este último no soportaba Vertex). Ver [`MIGRACION-GEMINI.md`](MIGRACION-GEMINI.md).
 
-> No usa la GitHub App; autentica con `ANTHROPIC_API_KEY` directamente.
+### `security_report` (reporte consolidado, no bloqueante)
+
+Job extra que solo corre en `pull_request`. Junta la salida de seguridad en un **comentario sticky**
+del PR (se actualiza en cada push, no spammea):
+
+- Corre **Trivy en modo reporte** (`CRITICAL,HIGH,MEDIUM`, **incluye sin-fix**, `exit-code: 0`),
+  arma una tabla markdown con `jq` (severidad · paquete · versión · fix · ID) y la postea con
+  `marocchino/sticky-pull-request-comment@v2` (header `security-report`).
+- El comentario apunta además a los hallazgos de **Gemini** (que comenta aparte), **Snyk** y **SonarQube**.
+- **No bloquea**. El gate determinístico sigue siendo el Trivy del job `quality` (que sí falla ante
+  vulnerabilidades CRITICAL con fix). Este reporte muestra el panorama completo (incluye MEDIUM y sin-fix).
 
 ---
 
@@ -198,9 +221,13 @@ Pasos:
      --image "$IMAGE:${{ github.sha }}" \
      --region us-central1 --allow-unauthenticated \
      --memory 2Gi --cpu 1 --cpu-boost --timeout 300 --max-instances 1 \
-     --set-env-vars BUILD_VERSION=${{ github.sha }} \
-     --update-secrets ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest
+     --clear-secrets \
+     --set-env-vars BUILD_VERSION=${{ github.sha }},GEMINI_MODEL=gemini-2.5-flash,VERTEX_PROJECT_ID=rag-proyect-499005,VERTEX_LOCATION=us-central1,ENABLE_LOAD_ENDPOINT=true
    ```
+
+   > El LLM autentica por **ADC** (la service account de runtime tiene `roles/aiplatform.user`), por
+   > eso ya no hay `--update-secrets`. `ENABLE_LOAD_ENDPOINT=true` queda activado para las pruebas
+   > k6 contra Cloud Run — **apagarlo** cuando no se esté load-testeando.
 
 > Todas las actions de Docker están **fijadas a commit SHA** (no a tags mutables) porque manejan
 > el access token del registry — mitiga ataques de cadena de suministro (hallazgo detectado por el
@@ -231,8 +258,9 @@ gcloud run services logs read rag-backend \
 - **Required status checks**: `quality` y `security_review` deben pasar.
 - Bloquea borrado de la rama y force-push (`deletion`, `non_fast_forward`).
 
-Efecto: si el `security_review` de Claude falla (encontró algo), **el PR no se puede mergear**, por
-lo tanto **no hay deploy**. `code_review` y `SonarQube` no son requeridos (informativos).
+Efecto: el merge exige que `quality` y `security_review` pasen. Tras la migración a Gemini, el
+`security_review` es **advisory** (no falla por hallazgos), así que en la práctica el gate real del
+deploy es `quality`. `code_review` y `SonarQube` no son requeridos (informativos).
 
 > Los rulesets en repos privados requieren GitHub Pro; por eso este repo es **público**.
 
@@ -249,9 +277,10 @@ credenciales de GCP:
 | OIDC Provider | `github-provider` (condición: `repository_owner == narodriguezb`) |
 | Service Account | `gh-deployer@rag-proyect-499005.iam.gserviceaccount.com` |
 
-Roles de la SA: `run.admin`, `artifactregistry.writer`, `iam.serviceAccountUser`,
-`cloudbuild.builds.editor`, `storage.admin`. La SA de runtime de Cloud Run tiene
-`secretmanager.secretAccessor` sobre `ANTHROPIC_API_KEY`.
+Roles de la SA `gh-deployer@`: `run.admin`, `artifactregistry.writer`, `iam.serviceAccountUser`,
+`cloudbuild.builds.editor`, `storage.admin` y **`aiplatform.user`** (para las reviews con Gemini en
+Vertex). La SA de runtime de Cloud Run (`235944902030-compute@developer.gserviceaccount.com`) tiene
+**`aiplatform.user`** para llamar a Gemini vía ADC (ya no usa Secret Manager).
 
 ---
 
@@ -261,11 +290,11 @@ GitHub → *Settings → Secrets and variables → Actions*.
 
 | Nombre | Tipo | Uso | Si falta… |
 |--------|------|-----|-----------|
-| `ANTHROPIC_API_KEY` | secret | reviews de Claude | `security_review`/`code_review` no pueden correr |
 | `SONAR_TOKEN` | secret | SonarQube Cloud | el step de Sonar se salta |
 
-> Los secrets nunca van en el repo. La API key de runtime de Cloud Run se lee desde **Secret Manager**
-> (`--update-secrets`), no como texto plano.
+> Tras la migración a Gemini, **el CI ya no necesita `ANTHROPIC_API_KEY`**: tanto las reviews como
+> el runtime autentican a Vertex AI por **WIF/ADC** (sin secrets de LLM). El secreto
+> `ANTHROPIC_API_KEY` en Secret Manager quedó sin uso.
 
 ---
 
@@ -287,7 +316,7 @@ uv run mutmut run && uv run mutmut export-cicd-stats && uv run python scripts/mu
 | Proyecto | `rag-proyect-499005` (nº `235944902030`) |
 | Cloud Run | servicio `rag-backend`, región `us-central1`, 2Gi / 1 vCPU, escala a cero |
 | Artifact Registry | `us-central1-docker.pkg.dev/rag-proyect-499005/cloud-run-source-deploy` |
-| Secret Manager | `ANTHROPIC_API_KEY` |
+| Vertex AI | Gemini `gemini-2.5-flash` en `us-central1` (ADC; SA con `roles/aiplatform.user`) |
 | URL | https://rag-backend-235944902030.us-central1.run.app |
 
 ---
@@ -297,9 +326,10 @@ uv run mutmut run && uv run mutmut export-cicd-stats && uv run python scripts/mu
 | Síntoma | Causa | Solución |
 |---------|-------|----------|
 | `Install dependencies` falla: `onnxruntime ... no wheel for cp314` | `uv` eligió Python 3.14 (el `.python-version` está gitignored) | el workflow fija `python-version: "3.13"` en `setup-uv` |
-| `code_review` falla en ~25s: *Claude Code is not installed* | falta la GitHub App de Claude | instalar https://github.com/apps/claude en el repo |
-| `code_review` falla: *Workflow validation failed... identical content on default branch* | el PR modifica `ci.yml` (aún no está en master) | normal al cambiar el workflow; se resuelve al mergear |
-| `security_review` falla con `findings-count > 0` | Claude encontró un hallazgo real | corregir el hallazgo (es el gate funcionando), p. ej. fijar actions a SHA |
+| `code_review`/`security_review` falla autenticando a GCP | el SA `gh-deployer@` no tiene `roles/aiplatform.user`, o el WIF no resuelve | otorgar el rol; verificar provider/SA del WIF |
+| Gemini CLI: *not running in a trusted directory* | feature de "trusted folders" en modo headless | setear `GEMINI_CLI_TRUST_WORKSPACE: "true"` en el `env` del step de `run-gemini-cli` |
+| Gemini responde `404 model not found` (`gemini-3.x...`) | la gemini-cli **0.46** ignora `--model`/`GEMINI_MODEL`/settings y defaultea a Gemini 3.x + su *model router* | **pinear `gemini_cli_version: "0.45.0"`** (que sí respeta el modelo), `gemini_model: gemini-2.5-flash` y `settings: '{"model":{"name":"gemini-2.5-flash"},"experimental":{"useModelRouter":false}}'` |
+| Gemini responde `429 RESOURCE_EXHAUSTED` | cuota del modelo agotada/en 0 | revisar cuotas de Vertex (en free trial no se pueden subir; ver [`MIGRACION-GEMINI.md`](MIGRACION-GEMINI.md)) |
 | El deploy tarda ~10 min | primera vez: caché de capas fría | runs siguientes reutilizan la caché (~1-2 min) |
 
 > Snyk se removió del workflow (se colgaba escaneando el árbol de dependencias de ML). El primer

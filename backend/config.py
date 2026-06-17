@@ -9,9 +9,9 @@ load_dotenv()
 @dataclass
 class Config:
     """Configuration settings for the RAG system"""
-    # Anthropic API settings
-    ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
-    ANTHROPIC_MODEL: str = "claude-sonnet-4-20250514"
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    VERTEX_PROJECT_ID: str = os.getenv("VERTEX_PROJECT_ID", "rag-proyect-499005")
+    VERTEX_LOCATION: str = os.getenv("VERTEX_LOCATION", "us-central1")
     
     # Embedding model settings
     EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
@@ -24,6 +24,8 @@ class Config:
     
     # Database paths
     CHROMA_PATH: str = "./chroma_db"  # ChromaDB storage location
+
+    ENABLE_LOAD_ENDPOINT: bool = os.getenv("ENABLE_LOAD_ENDPOINT", "").lower() in ("1", "true", "yes")
 
 config = Config()
 

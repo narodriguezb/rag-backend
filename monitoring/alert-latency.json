@@ -1,0 +1,22 @@
+{
+  "displayName": "rag-backend · Latencia p95 > 8s",
+  "combiner": "OR",
+  "conditions": [{
+    "displayName": "p95 de latencia del servicio > 8000 ms",
+    "conditionThreshold": {
+      "filter": "metric.type=\"run.googleapis.com/request_latencies\" resource.type=\"cloud_run_revision\" resource.label.service_name=\"rag-backend\"",
+      "aggregations": [{
+        "alignmentPeriod": "300s",
+        "perSeriesAligner": "ALIGN_PERCENTILE_95",
+        "crossSeriesReducer": "REDUCE_MEAN"
+      }],
+      "comparison": "COMPARISON_GT",
+      "thresholdValue": 8000,
+      "duration": "300s",
+      "trigger": { "count": 1 }
+    }
+  }],
+  "alertStrategy": { "autoClose": "604800s" },
+  "notificationChannels": ["__CHANNEL__"],
+  "enabled": true
+}

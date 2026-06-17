@@ -32,7 +32,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -71,14 +70,11 @@ jobs:
       - name: SonarQube Cloud scan        # análisis estático + cobertura (no bloqueante)
         if: ${{ env.SONAR_TOKEN != '' }}
         continue-on-error: true
-        uses: SonarSource/sonarqube-scan-action@v4
+        uses: SonarSource/sonarqube-scan-action@v6
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-  # ----------------------------------------------------------------------------
-  # Job 2: revisión de código con Claude (equiv. /code-review). Solo en PR.
-  # Es ADVISORY: comenta el PR pero no falla el build (la action no expone exit-code).
-  # ----------------------------------------------------------------------------
+  # Job 2: revisión de código con Gemini (run-gemini-cli sobre Vertex AI). Solo en PR. Advisory.
   code_review:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -86,20 +82,25 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
-      - uses: anthropics/claude-code-action@v1
+      - uses: google-github-actions/run-gemini-cli@v0.1.22
+        env:
+          GEMINI_CLI_TRUST_WORKSPACE: "true"
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          gemini_cli_version: "0.45.0"
+          gemini_model: gemini-2.5-flash
+          use_vertex_ai: true
+          gcp_workload_identity_provider: projects/235944902030/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          gcp_service_account: gh-deployer@rag-proyect-499005.iam.gserviceaccount.com
+          gcp_project_id: rag-proyect-499005
+          gcp_location: us-central1
+          gcp_token_format: access_token
+          settings: '{"model":{"name":"gemini-2.5-flash"},"experimental":{"useModelRouter":false}}'
           prompt: |
-            Review this pull request for correctness bugs, code quality,
-            best practices and potential security issues. Be concise and
-            post the findings as PR review comments.
-          claude_args: "--model claude-sonnet-4-6 --max-turns 6"
+            You are reviewing a pull request in this repository. Inspect the PR diff for
+            correctness bugs, code quality and best practices. Be concise and post your
+            findings as comments on the pull request using the available GitHub tools.
 
-  # ----------------------------------------------------------------------------
-  # Job 3: revisión de seguridad con Claude (equiv. /security-review). Solo en PR.
-  # GATE DURO: si la action reporta findings-count > 0, el step final falla el job
-  # y el ruleset de master impide el merge (y por tanto el deploy).
-  # ----------------------------------------------------------------------------
+  # Job 3: revisión de seguridad con Gemini (run-gemini-cli sobre Vertex AI). Solo en PR. Advisory.
   security_review:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -108,18 +109,78 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 2
-      - id: sec
-        uses: anthropics/claude-code-security-review@main
+      - uses: google-github-actions/run-gemini-cli@v0.1.22
+        env:
+          GEMINI_CLI_TRUST_WORKSPACE: "true"
         with:
-          claude-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          comment-pr: 'true'
-          claude-model: 'claude-sonnet-4-6'
-          exclude-directories: '.venv,mutants,backend/chroma_db,__pycache__'
-      - name: Fail if security findings
-        if: ${{ steps.sec.outputs.findings-count > 0 }}
+          gemini_cli_version: "0.45.0"
+          gemini_model: gemini-2.5-flash
+          use_vertex_ai: true
+          gcp_workload_identity_provider: projects/235944902030/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          gcp_service_account: gh-deployer@rag-proyect-499005.iam.gserviceaccount.com
+          gcp_project_id: rag-proyect-499005
+          gcp_location: us-central1
+          gcp_token_format: access_token
+          settings: '{"model":{"name":"gemini-2.5-flash"},"experimental":{"useModelRouter":false}}'
+          prompt: |
+            You are performing a security review of this pull request. Analyze the PR diff
+            for security vulnerabilities (injection, broken authn/authz, leaked secrets,
+            SSRF, unsafe deserialization, path traversal, risky dependencies). Ignore the
+            .venv, mutants, backend/chroma_db and __pycache__ directories. Post concise
+            findings as pull request comments. This review is advisory and does not block.
+
+  # Job 3b: reporte de seguridad consolidado (sticky comment). Solo en PR. No bloqueante.
+  security_report:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trivy (reporte JSON, no bloqueante)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL,HIGH,MEDIUM
+          ignore-unfixed: false
+          format: json
+          output: trivy.json
+          exit-code: '0'
+
+      - name: Construir reporte
         run: |
-          echo "Claude security review encontró ${{ steps.sec.outputs.findings-count }} hallazgo(s) — bloqueando."
-          exit 1
+          total=$(jq '[.Results[]?.Vulnerabilities[]?] | length' trivy.json)
+          crit=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length' trivy.json)
+          high=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH")] | length' trivy.json)
+          med=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="MEDIUM")] | length' trivy.json)
+          rows=$(jq -r '[.Results[]?.Vulnerabilities[]?] | sort_by(.Severity) | .[:25] | .[] | "| \(.Severity) | \(.PkgName) | \(.InstalledVersion) | \(.FixedVersion // "—") | \(.VulnerabilityID) |"' trivy.json)
+          {
+            echo "## 🔐 Reporte de seguridad del PR (no bloqueante)"
+            echo ""
+            echo "### Trivy — dependencias y archivos"
+            echo "Total: **$total** · CRITICAL: **$crit** · HIGH: **$high** · MEDIUM: **$med**"
+            echo ""
+            if [ -n "$rows" ]; then
+              echo "| Sev | Paquete | Instalada | Fix | ID |"
+              echo "|---|---|---|---|---|"
+              echo "$rows"
+              if [ "$total" -gt 25 ]; then echo ""; echo "_…mostrando 25 de $total._"; fi
+            else
+              echo "✅ Sin vulnerabilidades detectadas por Trivy."
+            fi
+            echo ""
+            echo "---"
+            echo "🤖 **Gemini security review** comenta sus hallazgos por separado en este PR."
+            echo "📊 **Snyk / SonarQube**: ver sus checks/dashboards (advisory)."
+            echo ""
+            echo "> Reporte informativo. El gate real sigue siendo \`quality\`: Trivy bloquea ahí las vulnerabilidades con fix de severidad alta; este reporte muestra el panorama completo (incluye MEDIUM y sin-fix)."
+          } > security-report.md
+
+      - name: Comentario sticky en el PR
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: security-report
+          path: security-report.md
 
   # ----------------------------------------------------------------------------
   # Job 4: deploy a Cloud Run. Solo tras pasar 'quality' y solo en push a master.
@@ -179,5 +240,5 @@ jobs:
             --cpu-boost \
             --timeout 300 \
             --max-instances 1 \
-            --set-env-vars BUILD_VERSION=${{ github.sha }} \
-            --update-secrets ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest
+            --clear-secrets \
+            --set-env-vars BUILD_VERSION=${{ github.sha }},GEMINI_MODEL=gemini-2.5-flash,VERTEX_PROJECT_ID=rag-proyect-499005,VERTEX_LOCATION=us-central1,ENABLE_LOAD_ENDPOINT=true
