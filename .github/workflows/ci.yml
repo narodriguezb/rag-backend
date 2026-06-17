@@ -86,6 +86,7 @@ jobs:
         env:
           GEMINI_CLI_TRUST_WORKSPACE: "true"
         with:
+          gemini_cli_version: "0.45.0"
           gemini_model: gemini-2.5-flash
           use_vertex_ai: true
           gcp_workload_identity_provider: projects/235944902030/locations/global/workloadIdentityPools/github-pool/providers/github-provider
@@ -112,6 +113,7 @@ jobs:
         env:
           GEMINI_CLI_TRUST_WORKSPACE: "true"
         with:
+          gemini_cli_version: "0.45.0"
           gemini_model: gemini-2.5-flash
           use_vertex_ai: true
           gcp_workload_identity_provider: projects/235944902030/locations/global/workloadIdentityPools/github-pool/providers/github-provider

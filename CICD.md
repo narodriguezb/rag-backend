@@ -328,7 +328,7 @@ uv run mutmut run && uv run mutmut export-cicd-stats && uv run python scripts/mu
 | `Install dependencies` falla: `onnxruntime ... no wheel for cp314` | `uv` eligió Python 3.14 (el `.python-version` está gitignored) | el workflow fija `python-version: "3.13"` en `setup-uv` |
 | `code_review`/`security_review` falla autenticando a GCP | el SA `gh-deployer@` no tiene `roles/aiplatform.user`, o el WIF no resuelve | otorgar el rol; verificar provider/SA del WIF |
 | Gemini CLI: *not running in a trusted directory* | feature de "trusted folders" en modo headless | setear `GEMINI_CLI_TRUST_WORKSPACE: "true"` en el `env` del step de `run-gemini-cli` |
-| Gemini responde `404 model not found` (`gemini-3.1-pro-preview` / `gemini-3.1-flash-lite`) | la gemini-cli ignora `GEMINI_MODEL` y su *model router* usa modelos 3.x no disponibles | fijar el modelo con el input `gemini_model: gemini-2.5-flash` y desactivar el router con `settings: '{"experimental":{"useModelRouter":false}}'` |
+| Gemini responde `404 model not found` (`gemini-3.x...`) | la gemini-cli **0.46** ignora `--model`/`GEMINI_MODEL`/settings y defaultea a Gemini 3.x + su *model router* | **pinear `gemini_cli_version: "0.45.0"`** (que sí respeta el modelo), `gemini_model: gemini-2.5-flash` y `settings: '{"model":{"name":"gemini-2.5-flash"},"experimental":{"useModelRouter":false}}'` |
 | Gemini responde `429 RESOURCE_EXHAUSTED` | cuota del modelo agotada/en 0 | revisar cuotas de Vertex (en free trial no se pueden subir; ver [`MIGRACION-GEMINI.md`](MIGRACION-GEMINI.md)) |
 | El deploy tarda ~10 min | primera vez: caché de capas fría | runs siguientes reutilizan la caché (~1-2 min) |
 
