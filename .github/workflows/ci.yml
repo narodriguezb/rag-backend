@@ -84,15 +84,16 @@ jobs:
           fetch-depth: 2
       - uses: google-github-actions/run-gemini-cli@v0.1.22
         env:
-          GEMINI_MODEL: gemini-2.5-flash
           GEMINI_CLI_TRUST_WORKSPACE: "true"
         with:
+          gemini_model: gemini-2.5-flash
           use_vertex_ai: true
           gcp_workload_identity_provider: projects/235944902030/locations/global/workloadIdentityPools/github-pool/providers/github-provider
           gcp_service_account: gh-deployer@rag-proyect-499005.iam.gserviceaccount.com
           gcp_project_id: rag-proyect-499005
           gcp_location: us-central1
           gcp_token_format: access_token
+          settings: '{"model":{"name":"gemini-2.5-flash"},"experimental":{"useModelRouter":false}}'
           prompt: |
             You are reviewing a pull request in this repository. Inspect the PR diff for
             correctness bugs, code quality and best practices. Be concise and post your
@@ -109,15 +110,16 @@ jobs:
           fetch-depth: 2
       - uses: google-github-actions/run-gemini-cli@v0.1.22
         env:
-          GEMINI_MODEL: gemini-2.5-flash
           GEMINI_CLI_TRUST_WORKSPACE: "true"
         with:
+          gemini_model: gemini-2.5-flash
           use_vertex_ai: true
           gcp_workload_identity_provider: projects/235944902030/locations/global/workloadIdentityPools/github-pool/providers/github-provider
           gcp_service_account: gh-deployer@rag-proyect-499005.iam.gserviceaccount.com
           gcp_project_id: rag-proyect-499005
           gcp_location: us-central1
           gcp_token_format: access_token
+          settings: '{"model":{"name":"gemini-2.5-flash"},"experimental":{"useModelRouter":false}}'
           prompt: |
             You are performing a security review of this pull request. Analyze the PR diff
             for security vulnerabilities (injection, broken authn/authz, leaked secrets,
