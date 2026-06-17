@@ -8,6 +8,7 @@ dependencies = [
     "chromadb==1.0.15",
     "google-genai>=1.0.0",
     "sentence-transformers==5.0.0",
+    "torch==2.7.1",
     "fastapi==0.116.1",
     "uvicorn==0.35.0",
     "python-multipart==0.0.20",
@@ -37,3 +38,11 @@ ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "backend/app.py" = ["E402"]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
