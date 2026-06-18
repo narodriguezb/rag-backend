@@ -110,13 +110,17 @@ async def get_course_stats():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/load")
-def synthetic_load(rows: int = 800, iterations: int = 120, ms: int = 0):
+def synthetic_load(rows: int = 800, iterations: int = 120, ms: int = 0, fail: int = 0):
     if not config.ENABLE_LOAD_ENDPOINT:
         raise HTTPException(status_code=404, detail="Not Found")
 
     rows = max(1, min(rows, 5000))
     iterations = max(1, min(iterations, 2000))
-    ms = max(0, min(ms, 5000))
+    ms = max(0, min(ms, 15000))
+    fail = max(0, min(fail, 100))
+
+    if fail and random.random() * 100 < fail:
+        raise HTTPException(status_code=500, detail="Synthetic failure")
 
     start = time.perf_counter()
     data = [{"id": i, "value": random.random(), "label": f"item-{i}"} for i in range(rows)]

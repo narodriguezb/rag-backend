@@ -9,6 +9,8 @@ const loadLatency = new Trend('load_latency_ms', true);
 const BASE_URL = __ENV.BASE_URL || 'https://rag-backend-235944902030.us-central1.run.app';
 const LOAD_ROWS = __ENV.LOAD_ROWS || 800;
 const LOAD_ITER = __ENV.LOAD_ITER || 120;
+const LOAD_MS = __ENV.LOAD_MS || 12000;
+const LOAD_FAIL = __ENV.LOAD_FAIL || 10;
 const QUICK = __ENV.QUICK === '1';
 
 export const options = {
@@ -34,19 +36,19 @@ export const options = {
       exec: 'browse',
       tags: { scenario: 'browse' },
     },
-    saturate: {
+    breach: {
       executor: 'ramping-vus',
-      startTime: QUICK ? '20s' : '130s',
+      startTime: QUICK ? '20s' : '140s',
       startVUs: 0,
       stages: QUICK
-        ? [{ duration: '10s', target: 30 }, { duration: '10s', target: 0 }]
+        ? [{ duration: '10s', target: 10 }, { duration: '10s', target: 0 }]
         : [
-            { duration: '40s', target: 60 },
-            { duration: '60s', target: 150 },
-            { duration: '40s', target: 0 },
+            { duration: '20s', target: 20 },
+            { duration: '180s', target: 20 },
+            { duration: '20s', target: 0 },
           ],
-      exec: 'saturate',
-      tags: { scenario: 'saturate' },
+      exec: 'breach',
+      tags: { scenario: 'breach' },
     },
   },
   thresholds: {
@@ -76,10 +78,10 @@ export function browse() {
   sleep(1);
 }
 
-export function saturate() {
-  const r = http.get(`${BASE_URL}/api/load?rows=${LOAD_ROWS}&iterations=${LOAD_ITER}`);
+export function breach() {
+  const url = `${BASE_URL}/api/load?rows=${LOAD_ROWS}&iterations=${LOAD_ITER}&ms=${LOAD_MS}&fail=${LOAD_FAIL}`;
+  const r = http.get(url);
   loadLatency.add(r.timings.duration);
-  check(r, { 'load 200': (res) => res.status === 200 });
   if (r.status === 429) throttled.add(1);
   errorRate.add(r.status >= 500 || r.status === 0);
   sleep(0.3);
