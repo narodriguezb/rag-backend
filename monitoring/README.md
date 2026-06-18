@@ -28,7 +28,14 @@ adaptado a este servicio.
 
 > Difieren del tutorial: las alertas de disponibilidad/errores son **ratio** (no *rate*) para no dar
 > falsos positivos cuando el servicio escala a cero; la latencia usa `ALIGN_PERCENTILE_95`; ventana
-> de 300 s. La p95 < 500 ms del tutorial **no aplica** a un RAG (las queries tardan segundos), por eso 8 s.
+> de 60 s (`alignmentPeriod` 60 s + `duration` 60 s) para que disparen durante una prueba de carga
+> sin esperar 5 min sostenidos. La p95 < 500 ms del tutorial **no aplica** a un RAG (las queries
+> tardan segundos), por eso 8 s.
+>
+> **Nota sobre 5xx:** al saturar con `maxScale=1`, Cloud Run responde **429** (clase 4xx), no 5xx, así
+> que la alerta de errores 5xx no dispara por carga; bajo saturación disparan **latencia p95** y
+> **disponibilidad** (los 429 bajan el ratio 2xx/total). El canal de email debe estar **verificado**
+> (`verificationStatus: VERIFIED`) o no se envían correos aunque la alerta dispare.
 
 ## Widgets del dashboard
 
