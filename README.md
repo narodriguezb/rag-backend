@@ -1,33 +1,33 @@
 # Course Materials RAG — Backend
 
-FastAPI backend for the Course Materials RAG system. Serves a JSON API consumed by the React frontend (separate repo).
+Backend FastAPI del sistema RAG sobre materiales de curso. Expone una API JSON que consume el
+frontend React (repo aparte). Recupera contenido relevante con búsqueda semántica (ChromaDB) y
+genera las respuestas con **Gemini (Vertex AI)**.
 
-## Requirements
+## Requisitos
 
 - Python 3.13+
 - [uv](https://docs.astral.sh/uv/)
-- A Google Cloud project with Vertex AI enabled + ADC (`gcloud auth application-default login`)
+- Un proyecto de Google Cloud con Vertex AI habilitado + ADC (`gcloud auth application-default login`)
 
-## Setup
+## Instalación
 
 ```bash
 uv sync
-cp .env.example .env                      # Vertex project/region (defaults already set)
-gcloud auth application-default login     # ADC for Vertex AI (local)
+cp .env.example .env                      # proyecto/región de Vertex (defaults ya puestos)
+gcloud auth application-default login     # ADC para Vertex AI (local)
 ```
 
-> El LLM se migró de Anthropic Claude a **Gemini (Vertex AI)** — ver [`MIGRACION-GEMINI.md`](MIGRACION-GEMINI.md).
-
-## Run
+## Ejecutar
 
 ```bash
 chmod +x run.sh
 ./run.sh
-# or
+# o
 cd backend && uv run uvicorn app:app --reload --port 8000
 ```
 
-The API runs at `http://localhost:8000`.
+La API corre en `http://localhost:8000`.
 
 ## API
 
@@ -35,41 +35,55 @@ The API runs at `http://localhost:8000`.
 - `POST /api/query` — `{ query, session_id? }` → `{ answer, sources, session_id }`
 - `GET /api/courses` — `{ total_courses, course_titles }`
 
-CORS is open (`*`) for local development with the frontend dev server.
+CORS abierto (`*`) para desarrollo local con el dev server del frontend.
 
-## Configuration
+## Configuración
 
-See `backend/config.py` (chunk size, model, embedding model, etc.). Course documents live in `docs/` and are indexed into ChromaDB (`backend/chroma_db/`) on startup.
+Ver `backend/config.py` (tamaño de chunk, modelo, modelo de embeddings, etc.). Los documentos de
+curso viven en `docs/` y se indexan en ChromaDB (`backend/chroma_db/`) al arrancar.
 
-## Monitoring (golden signals)
+## Generación (Gemini / Vertex AI)
 
-Cloud Monitoring dashboard + SLO alerts for the Cloud Run service, built from Cloud Run **native
-metrics** (no app code). SLOs: availability ≥ 99%, p95 latency < 8 s, 5xx errors < 1%. Definitions
-and how to apply them (`apply.sh`) live in [`monitoring/`](monitoring/README.md).
+La generación usa **`gemini-2.5-flash`** vía el SDK `google-genai` sobre Vertex AI, con **búsqueda
+basada en herramientas** (function calling): el modelo invoca `CourseSearchTool` para recuperar el
+contenido relevante antes de responder. La autenticación es por **ADC** (sin API key): en Cloud Run
+usa la service account de runtime (`roles/aiplatform.user`); en local, `gcloud auth
+application-default login`.
 
-## Load testing (k6)
+## Monitoreo (golden signals)
 
-`K6/load-test.js` drives load against the service. Three sequenced scenarios: **warmup** (isolates
-cold start) → **browse** (`GET /`, `/api/courses`; SLO thresholds p95 < 8 s, failures < 1%) →
-**saturate** (hammers `GET /api/load`, a CPU-bound synthetic endpoint, to surface cold starts /
-throttling).
+Dashboard de Cloud Monitoring + alertas de SLO para el servicio de Cloud Run, construidas sobre las
+**métricas nativas de Cloud Run** (`run.googleapis.com/*`), sin tocar código de la app. SLOs:
+disponibilidad ≥ 99%, latencia p95 < 8 s, errores 5xx < 1%. Las definiciones y cómo aplicarlas
+(`apply.sh`) están en [`monitoring/`](monitoring/README.md).
+
+## Pruebas de carga (k6)
+
+`K6/load-test.js` genera tráfico contra el servicio. Tres escenarios secuenciados:
+
+- **warmup** — aísla el cold start (`GET /`).
+- **browse** — tráfico normal (`GET /`, `GET /api/courses`) con thresholds de SLO (p95 < 8 s, fallos < 1%).
+- **breach** — golpea `GET /api/load` (endpoint sintético) con `ms` y `fail` para violar los SLOs a
+  propósito y disparar las alertas: el 90% de los requests tarda ~12 s (latencia p95 > 8 s) y el 10%
+  devuelve 500 (errores 5xx > 1% y disponibilidad < 99%).
 
 ```bash
-brew install k6                                   # one-time
-k6 run K6/load-test.js                            # against the live Cloud Run URL (default)
-QUICK=1 BASE_URL=http://localhost:8000 k6 run K6/load-test.js   # fast local smoke
+brew install k6                                   # una vez
+k6 run K6/load-test.js                            # contra la URL de Cloud Run (default)
+QUICK=1 BASE_URL=http://localhost:8000 k6 run K6/load-test.js   # smoke local rápido
 ```
 
-Env knobs: `BASE_URL`, `QUICK=1` (short run), `LOAD_ROWS` / `LOAD_ITER` (work per request).
+Variables: `BASE_URL`, `QUICK=1` (corrida corta), `LOAD_ROWS` / `LOAD_ITER` (trabajo por request),
+`LOAD_MS` (delay server-side, default 12000), `LOAD_FAIL` (% de 500, default 10).
 
-> `GET /api/load` is gated behind `ENABLE_LOAD_ENDPOINT` (returns 404 when off). Enable it only for
-> load tests; the live dashboard in `monitoring/` only moves while traffic is flowing.
+> `GET /api/load` está protegido por `ENABLE_LOAD_ENDPOINT` (devuelve 404 si está apagado). Se activa
+> solo para las pruebas de carga; el dashboard de `monitoring/` solo se mueve mientras hay tráfico.
 
 ## CI/CD
 
-Pipeline de GitHub Actions (`.github/workflows/ci.yml`): en cada **PR a `master`** corren los
-gates de calidad y las reviews de Gemini; al **mergear a `master`** se despliega a Cloud Run vía
-Workload Identity Federation.
+Pipeline de GitHub Actions (`.github/workflows/ci.yml`): en cada **PR a `master`** corren los gates
+de calidad y las reviews de Gemini; al **mergear a `master`** se despliega a Cloud Run vía Workload
+Identity Federation.
 
 ```
 PR a master    ──► quality + code_review + security_review (Gemini, advisory)
@@ -77,4 +91,4 @@ merge a master ──► quality ──► deploy (Cloud Run)
 ```
 
 📄 **Documentación completa del flujo en [`CICD.md`](CICD.md)** — cada job paso a paso, gates y
-umbrales, protección de rama, autenticación WIF, secrets, despliegue cacheado y troubleshooting.
+umbrales, protección de rama, autenticación WIF, secrets y troubleshooting.

@@ -1,93 +1,102 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guía para Claude Code (claude.ai/code) al trabajar en este repositorio.
 
-## Project Overview
+## Descripción del proyecto
 
-Course Materials RAG — Backend. A FastAPI service that powers a Retrieval-Augmented Generation system over course materials, using ChromaDB for vector storage and Google's Gemini (via Vertex AI) for generation. It exposes a JSON API consumed by the React frontend (separate repo: `../rag-frontend`).
+Course Materials RAG — Backend. Servicio FastAPI que implementa un sistema de Retrieval-Augmented
+Generation sobre materiales de curso, usando ChromaDB para el almacenamiento vectorial y Gemini (vía
+Vertex AI) para la generación. Expone una API JSON que consume el frontend React (repo aparte:
+`../rag-frontend`).
 
-> LLM provider migrated from Anthropic Claude to Gemini/Vertex AI on 2026-06-17 — see [`MIGRACION-GEMINI.md`](MIGRACION-GEMINI.md).
+Este repo es **solo API** — no sirve ningún frontend. CORS está abierto para desarrollo local con el
+dev server del frontend.
 
-This repo is **API-only** — it does not serve any frontend. CORS is open for local development with the frontend dev server.
-
-## Build & Run
+## Build y ejecución
 
 ```bash
-uv sync                                                  # Install/lock dependencies
-cp .env.example .env                                     # Vertex project/region (defaults already set)
-gcloud auth application-default login                    # ADC for Vertex AI (local only)
+uv sync                                                  # instala/locka dependencias
+cp .env.example .env                                     # proyecto/región de Vertex (defaults ya puestos)
+gcloud auth application-default login                    # ADC para Vertex AI (solo local)
 
-./run.sh                                                 # Preferred: start the API
-# or
+./run.sh                                                 # preferido: arranca la API
+# o
 cd backend && uv run uvicorn app:app --reload --port 8000
 ```
 
-The API runs at `http://localhost:8000`. Always use `uv` (never `pip` directly); let `uv` manage all dependencies and run all Python.
+La API corre en `http://localhost:8000`. Usar siempre `uv` (nunca `pip` directo); dejar que `uv`
+gestione todas las dependencias y ejecute todo Python.
 
 ## API
 
-All endpoints in `backend/app.py`:
+Todos los endpoints en `backend/app.py`:
 - `GET /` — health check (`{ status, service }`)
 - `POST /api/query` — `{ query, session_id? }` → `{ answer, sources, session_id }`
 - `GET /api/courses` — `{ total_courses, course_titles }`
 
-## Architecture
+## Arquitectura
 
-The backend follows a modular orchestration pattern.
+El backend sigue un patrón de orquestación modular.
 
-| Module (`backend/`) | Responsibility |
+| Módulo (`backend/`) | Responsabilidad |
 |---|---|
-| `app.py` | FastAPI app, CORS, request/response models, API endpoints, startup doc loading |
-| `rag_system.py` | Main orchestrator wiring all components together |
-| `document_processor.py` | Chunks course documents (with overlap) |
-| `vector_store.py` | ChromaDB interface for semantic search |
-| `ai_generator.py` | Gemini (Vertex AI) integration with function-calling tool support |
-| `session_manager.py` | Conversation history per session |
-| `search_tools.py` | Tool-based search exposed to the model |
-| `models.py` | Pydantic models (courses, lessons, chunks) |
-| `config.py` | Configuration from environment variables |
+| `app.py` | App FastAPI, CORS, modelos request/response, endpoints, carga de documentos al arranque |
+| `rag_system.py` | Orquestador principal que conecta todos los componentes |
+| `document_processor.py` | Chunkea los documentos de curso (con overlap) |
+| `vector_store.py` | Interfaz a ChromaDB para búsqueda semántica |
+| `ai_generator.py` | Integración con Gemini (Vertex AI) con soporte de function calling |
+| `session_manager.py` | Historial de conversación por sesión |
+| `search_tools.py` | Búsqueda basada en herramientas expuesta al modelo |
+| `models.py` | Modelos Pydantic (cursos, lecciones, chunks) |
+| `config.py` | Configuración desde variables de entorno |
 
-### Key Patterns
-- **Tool-based search:** the model (Gemini) calls a defined `CourseSearchTool` via function calling rather than doing direct vector similarity in the handler.
-- **Sessions:** conversation context is maintained per `session_id` with configurable history (`MAX_HISTORY`).
-- **Deduplication:** course documents are deduplicated by title.
-- **Lean handlers:** endpoints in `app.py` delegate to `rag_system`; no business logic in HTTP handlers.
+### Patrones clave
+- **Búsqueda basada en herramientas:** el modelo (Gemini) llama a `CourseSearchTool` vía function
+  calling en lugar de hacer búsqueda vectorial directa en el handler.
+- **Sesiones:** el contexto de conversación se mantiene por `session_id` con historial configurable
+  (`MAX_HISTORY`).
+- **Deduplicación:** los documentos de curso se deduplican por título.
+- **Handlers livianos:** los endpoints en `app.py` delegan en `rag_system`; sin lógica de negocio en
+  los handlers HTTP.
 
-## Data Flow
-1. On startup, documents in `docs/` are processed and chunked.
-2. Chunks are embedded and stored in ChromaDB (`backend/chroma_db/`).
-3. A user query triggers a tool-based search via Gemini (function calling).
-4. Gemini uses `CourseSearchTool` to retrieve relevant content.
-5. The answer is generated with sources, and session context is updated.
+## Flujo de datos
+1. Al arrancar, los documentos en `docs/` se procesan y chunkean.
+2. Los chunks se embeben y se guardan en ChromaDB (`backend/chroma_db/`).
+3. Una query dispara una búsqueda basada en herramientas vía Gemini (function calling).
+4. Gemini usa `CourseSearchTool` para recuperar el contenido relevante.
+5. La respuesta se genera con fuentes y se actualiza el contexto de sesión.
 
-## Configuration
+## Configuración
 
-Key settings in `backend/config.py`:
-- `CHUNK_SIZE: 800` — text chunk size for vector storage
-- `CHUNK_OVERLAP: 100` — character overlap between chunks
-- `MAX_RESULTS: 5` — maximum search results returned
-- `MAX_HISTORY: 2` — conversation messages remembered
-- `EMBEDDING_MODEL: "all-MiniLM-L6-v2"` — sentence-transformer model
-- `GEMINI_MODEL` — Gemini model id (default `gemini-2.5-flash`)
-- `VERTEX_PROJECT_ID` / `VERTEX_LOCATION` — Vertex AI project and region (default `rag-proyect-499005` / `us-central1`)
+Ajustes clave en `backend/config.py`:
+- `CHUNK_SIZE: 800` — tamaño de chunk de texto para el vector store
+- `CHUNK_OVERLAP: 100` — overlap de caracteres entre chunks
+- `MAX_RESULTS: 5` — máximo de resultados de búsqueda
+- `MAX_HISTORY: 2` — mensajes de conversación recordados
+- `EMBEDDING_MODEL: "all-MiniLM-L6-v2"` — modelo sentence-transformer
+- `GEMINI_MODEL` — id del modelo Gemini (default `gemini-2.5-flash`)
+- `VERTEX_PROJECT_ID` / `VERTEX_LOCATION` — proyecto y región de Vertex AI (default `rag-proyect-499005` / `us-central1`)
 
-## Environment Variables
-- `GEMINI_MODEL`, `VERTEX_PROJECT_ID`, `VERTEX_LOCATION` — Vertex AI config (defaults in `config.py`).
-- `ENABLE_LOAD_ENDPOINT` — when truthy, exposes `GET /api/load` (synthetic CPU load for k6); off by default.
-- Auth uses **ADC**, not an API key: `gcloud auth application-default login` locally; the Cloud Run service account (`roles/aiplatform.user`) in production.
+## Variables de entorno
+- `GEMINI_MODEL`, `VERTEX_PROJECT_ID`, `VERTEX_LOCATION` — config de Vertex AI (defaults en `config.py`).
+- `ENABLE_LOAD_ENDPOINT` — cuando es truthy, expone `GET /api/load` (carga sintética para k6); apagado por defecto.
+- Auth por **ADC**, no API key: `gcloud auth application-default login` en local; la service account
+  de Cloud Run (`roles/aiplatform.user`) en producción.
 
-## Development Guidelines
+## Guías de desarrollo
 
-### Code Quality
-- **Always remove comments at the end**: clean up explanatory comments after a change. Keep code self-documenting; only keep comments for genuinely non-obvious logic.
-- Scan files you touch — remove unused imports, variables, and dead branches.
+### Calidad de código
+- **Eliminar comentarios al final:** limpiar comentarios explicativos tras un cambio. Mantener el
+  código autoexplicativo; conservar comentarios solo para lógica genuinamente no obvia.
+- Al tocar un archivo, eliminar imports, variables y ramas muertas que queden sin uso.
 
-### Conventions
-- Requires Python 3.13+.
-- Always use `uv` to run the server and Python files; `uv` manages all dependencies.
-- Keep handlers lean — delegate to `rag_system` and the modules above.
+### Convenciones
+- Requiere Python 3.13+.
+- Usar siempre `uv` para correr el server y los archivos Python; `uv` gestiona las dependencias.
+- Mantener los handlers livianos — delegar en `rag_system` y los módulos de arriba.
 
-## Important Notes
-- Uses tool-based search rather than direct similarity search.
-- ChromaDB storage persists in `backend/chroma_db/` (gitignored; rebuilt from `docs/` on startup).
-- Never edit / commit secret paths: `.env`, `.venv/`, `__pycache__/`, `backend/chroma_db/`.
+## Notas importantes
+- Usa búsqueda basada en herramientas, no búsqueda por similitud directa.
+- El almacenamiento de ChromaDB persiste en `backend/chroma_db/` (gitignored; se reconstruye desde
+  `docs/` al arrancar).
+- Nunca editar / commitear rutas secretas: `.env`, `.venv/`, `__pycache__/`, `backend/chroma_db/`.

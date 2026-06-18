@@ -1,7 +1,7 @@
 # Pipeline CI/CD del backend (FastAPI + uv).
-# - En PR a master: corren los gates (quality) + las reviews de Claude (code y security).
+# - En PR a master: corren los gates (quality) + las reviews de Gemini (code y security).
 # - En push/merge a master: corre quality y, si pasa, deploy a Cloud Run.
-# El bloqueo del deploy ante hallazgos de Claude se aplica vía ruleset de la rama master
+# El bloqueo del deploy ante hallazgos de las reviews se aplica vía ruleset de la rama master
 # (exige que los checks 'quality' y 'security_review' pasen para poder mergear).
 name: CI/CD backend
 
@@ -9,11 +9,11 @@ on:
   push:
     branches: [master]        # merge a master -> calidad + deploy
   pull_request:
-    branches: [master]        # PR contra master -> calidad + reviews de Claude
+    branches: [master]        # PR contra master -> calidad + reviews de Gemini
   workflow_dispatch:          # ejecución manual desde Actions
 
 # id-token: write -> auth a Google Cloud vía WIF (sin claves).
-# pull-requests: write -> que las reviews de Claude puedan comentar el PR.
+# pull-requests: write -> que las reviews de Gemini puedan comentar el PR.
 permissions:
   contents: read
   id-token: write
